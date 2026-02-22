@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>歴史空手トーナメント - 昇級審査</title>
+    <style>
+        :root { --karate-red: #d32f2f; --karate-black: #212121; --karate-gold: #ffd700; --karate-yellow: #ffff00; }
+        body {
+            font-family: 'Hiragino Mincho ProN', serif;
+            margin: 0; display: flex; justify-content: center; color: #333;
+            background-color: #333; /* 背景画像がない場合のフォールバック */
+            background-image: url('https://images.unsplash.com/photo-1581014131338-9993306e676d?q=80&w=2070&auto=format&fit=crop'); /* 畳のイメージ */
+            background-size: cover; background-position: center; background-attachment: fixed;
+            min-height: 100vh;
+        }
+        #game-box {
+            width: 100%; max-width: 500px;
+            background: rgba(255, 255, 255, 0.95);
+            min-height: 100vh; padding: 20px;
+            box-shadow: 0 0 30px rgba(0,0,0,0.8);
+            position: relative; box-sizing: border-box; display: flex; flex-direction: column;
+        }
+        .status-bar { display: flex; justify-content: space-between; font-weight: bold; border-bottom: 4px double var(--karate-black); padding-bottom: 10px; margin-bottom: 20px; }
+        .warning-text { color: var(--karate-red); font-size: 1.4rem; letter-spacing: 2px; font-weight: 900; }
+        .round-title { font-size: 1.1rem; text-align: center; background: #e0e0e0; padding: 5px; border-radius: 5px; }
+        .opponent-name { font-size: 1.6rem; text-align: center; margin: 15px 0; font-weight: bold; }
+        .question-box { font-size: 1.2rem; margin-bottom: 20px; line-height: 1.6; min-height: 110px; border: 3px solid #ccc; padding: 15px; border-radius: 10px; background: #fff; }
+        .choice-btn { display: block; width: 100%; padding: 16px; margin: 12px 0; border: 2px solid var(--karate-black); border-radius: 8px; background: #fff; font-size: 1.1rem; font-weight: bold; cursor: pointer; box-shadow: 0 4px 0 #888; }
+        .choice-btn:active { background: var(--karate-black); color: #fff; transform: translateY(4px); box-shadow: none; }
+        .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); color: white; display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 100; text-align: center; padding: 20px; box-sizing: border-box; }
+        .ippon { font-size: 5rem; color: var(--karate-gold); font-weight: bold; text-shadow: 0 0 20px #fff; font-style: italic; }
+        .yellow-belt { width: 80%; height: 40px; background: var(--karate-yellow); border: 3px solid #cc0; margin: 20px 0; position: relative; box-shadow: 0 0 15px var(--karate-yellow); }
+        .yellow-belt::after { content: "昇級"; color: black; font-weight: bold; line-height: 40px; position: absolute; left: 50%; transform: translateX(-50%); }
+        .rei-text { font-size: 2.2rem; font-weight: bold; margin-bottom: 30px; }
+        .hajime-btn { padding: 18px 50px; font-size: 1.5rem; background: var(--karate-red); color: white; border: none; border-radius: 50px; cursor: pointer; font-weight: bold; box-shadow: 0 6px 0 #800; }
+        .progress-dots { text-align: center; margin-bottom: 10px; color: #666; font-size: 0.9rem; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div id="game-box">
+    <div class="status-bar">
+        <div id="round-label">一回戦</div>
+        <div id="warning-display" class="warning-text"></div>
+    </div>
+
+    <div id="main-ui">
+        <div class="progress-dots" id="q-progress">第 1 / 6 問</div>
+        <div class="round-title" id="round-display">トーナメント</div>
+        <div class="opponent-name" id="opponent-display">対戦相手</div>
+        <div class="question-box" id="question-text"></div>
+        <div id="choices-area"></div>
+    </div>
+
+    <div id="overlay" class="overlay">
+        <div id="overlay-content">
+            <div id="rei-message" class="rei-text">正面に礼！</div>
+            <div id="special-reward"></div>
+            <button id="action-btn" class="hajime-btn">はじめ！</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    let noiseBuffer = null;
+
+    function createNoiseBuffer() {
+        const bufferSize = audioCtx.sampleRate;
+        const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+        noiseBuffer = buffer;
+    }
+    createNoiseBuffer();
+
+    function playSound(type) {
+        const gain = audioCtx.createGain(); gain.connect(audioCtx.destination);
+        if (type === 'hit') {
+            const source = audioCtx.createBufferSource(); source.buffer = noiseBuffer;
+            const filter = audioCtx.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 800;
+            gain.gain.setValueAtTime(0.01, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(1.0, audioCtx.currentTime + 0.01);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+            source.connect(filter); filter.connect(gain); source.start(); source.stop(audioCtx.currentTime + 0.1);
+        } else if (type === 'miss') {
+            const osc = audioCtx.createOscillator(); osc.type = 'sawtooth'; osc.frequency.value = 90;
+            gain.gain.setValueAtTime(0.3, audioCtx.currentTime); gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.4);
+            osc.connect(gain); osc.start(); osc.stop(audioCtx.currentTime + 0.4);
+        } else if (type === 'ippon') {
+            const osc1 = audioCtx.createOscillator(); osc1.frequency.value = 523;
+            gain.gain.setValueAtTime(0.5, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 2.0);
+            osc1.connect(gain); osc1.start(); osc1.stop(audioCtx.currentTime + 2.0);
+        }
+    }
+
+    const tournament = [
+        { name: "一回戦", opponent: "古代の守護者", qs: [
+            { q: "聖徳太子が定めた、家柄ではなく能力のある人を役人に採用する制度は？", c: ["十七条の憲法", "冠位十二階", "班田収授法"], a: "冠位十二階" },
+            { q: "中大兄皇子らが蘇我氏を倒し、天皇中心の国づくりを始めた改革は？", c: ["大化の改新", "承久の乱", "建武の新政"], a: "大化の改新" },
+            { q: "奈良時代、墾田永年私財法によって認められたものは？", c: ["武器の所有", "土地の私有", "キリスト教"], a: "土地の私有" },
+            { q: "鑑真が何度も遭難しながらも日本に伝えた、僧侶が守るべきルールは？", c: ["戒律", "儒教", "朱子学"], a: "戒律" },
+            { q: "平安時代、菅原道真の提案により中止された、中国への使節は？", c: ["遣隋使", "遣唐使", "朝鮮通信使"], a: "遣唐使" },
+            { q: "平安中期、藤原氏が摂政や関白として権力を振るった政治を何という？", c: ["院政", "摂関政治", "幕政"], a: "摂関政治" }
+        ]},
+        { name: "準決勝", opponent: "中世の覇者", qs: [
+            { q: "北条泰時が制定した、武士社会の慣習をまとめた最初の法律は？", c: ["御成敗式目", "武家諸法度", "五箇条の御誓文"], a: "御成敗式目" },
+            { q: "足利義政が京都の東山に建てた、わび・さびの文化を代表する建物は？", c: ["金閣", "銀閣", "法隆寺五重塔"], a: "銀閣" },
+            { q: "室町時代、農民たちが団結して年貢の軽減などを求めて起こした行動は？", c: ["一揆", "打ちこわし", "ええじゃないか"], a: "一揆" },
+            { q: "織田信長が、座（商人の組合）を廃止して自由に商売をさせた政策は？", c: ["楽市・楽座", "検地", "刀狩"], a: "楽市・楽座" },
+            { q: "豊臣秀吉が全国の田畑の面積や収穫量を調査し、年貢を安定させたのは？", c: ["地租改正", "太閤検地", "藩籍奉還"], a: "太閤検地" },
+            { q: "江戸幕府がキリスト教徒を見つけるために、キリスト像を踏ませたことは？", c: ["踏み絵", "絵踏", "宗門改"], a: "絵踏" },
+            { q: "江戸時代、将軍が変わるたびに琉球王国や朝鮮からやってきた使節は？", c: ["南蛮人", "朝鮮通信使", "遣唐使"], a: "朝鮮通信使" }
+        ]},
+        { name: "決勝戦", opponent: "近代の鉄人", qs: [
+            { q: "福沢諭吉が「天は人の上に人を造らず…」と説き、学問の大切さを書いた本は？", c: ["学問のすゝめ", "坊っちゃん", "武士道"], a: "学問のすゝめ" },
+            { q: "1894年、陸奥宗光の努力により廃止に成功した不平等条約の項目は？", c: ["関税自主権の回復", "領事裁判権の撤廃", "最恵国待遇"], a: "領事裁判権の撤廃" },
+            { q: "日露戦争の講和会議が行われ、日本が賠償金を得られず暴動が起きた場所は？", c: ["下関", "ポーツマス", "サンフランシスコ"], a: "ポーツマス" },
+            { q: "1925年、25歳以上の男子全員に選挙権が与えられた法律は？", c: ["普通選挙法", "治安維持法", "日本国憲法"], a: "普通選挙法" },
+            { q: "戦後、地主から土地を買い取り、小作農に安く売り渡した農村の民主化政策は？", c: ["廃藩置県", "農地改革", "財閥解体"], a: "農地改革" },
+            { q: "1951年、日本が主権を回復し、多くの国と平和条約を結んだ会議の場所は？", c: ["ワシントン", "ジュネーブ", "サンフランシスコ"], a: "サンフランシスコ" },
+            { q: "日本国憲法において、天皇の立場は何と定められている？", c: ["統治権の総攬者", "象徴", "国家元首"], a: "象徴" }
+        ]}
+    ];
+
+    let currentRound = 0, currentQ = 0, warnings = 0;
+
+    function showStartRei() {
+        const overlay = document.getElementById("overlay"), msg = document.getElementById("rei-message"), 
+              btn = document.getElementById("action-btn"), reward = document.getElementById("special-reward");
+        overlay.style.display = "flex";
+        reward.innerHTML = "";
+        msg.innerText = "正面に礼！"; btn.innerText = "はじめ！";
+        btn.onclick = () => { if (audioCtx.state === 'suspended') audioCtx.resume(); overlay.style.display = "none"; loadQuestion(); };
+    }
+
+    function loadQuestion() {
+        const data = tournament[currentRound], qData = data.qs[currentQ];
+        document.getElementById("round-label").innerText = data.name;
+        document.getElementById("q-progress").innerText = `第 ${currentQ + 1} / ${data.qs.length} 問`;
+        document.getElementById("round-display").innerText = `${data.name} 審査`;
+        document.getElementById("opponent-display").innerText = `対戦相手：${data.opponent}`;
+        document.getElementById("question-text").innerText = qData.q;
+        const area = document.getElementById("choices-area");
+        area.innerHTML = "";
+        qData.c.forEach(choice => {
+            const btn = document.createElement("button"); btn.className = "choice-btn"; btn.innerText = choice;
+            btn.onclick = () => checkAnswer(choice); area.appendChild(btn);
+        });
+    }
+
+    function checkAnswer(choice) {
+        if (choice === tournament[currentRound].qs[currentQ].a) {
+            playSound('hit'); currentQ++;
+            if (currentQ >= tournament[currentRound].qs.length) showIppon(); else loadQuestion();
+        } else {
+            warnings++; playSound('miss');
+            if (warnings >= 3) showDisqualification(); else document.getElementById("warning-display").innerText = `注意 ${warnings}`;
+        }
+    }
+
+    function showIppon() {
+        playSound('ippon');
+        const overlay = document.getElementById("overlay"), msg = document.getElementById("rei-message"), 
+              btn = document.getElementById("action-btn"), reward = document.getElementById("special-reward");
+        overlay.style.display = "flex";
+        
+        if (currentRound < tournament.length - 1) {
+            msg.innerHTML = `<span class="ippon">一本！</span><br>審査通過`;
+            btn.innerText = "次の試合へ";
+            btn.onclick = () => { currentRound++; currentQ = 0; warnings = 0; document.getElementById("warning-display").innerText = ""; showStartRei(); };
+        } else {
+            msg.innerHTML = `<span class="ippon" style="font-size:3rem; color:var(--karate-yellow)">昇級しました</span><br>黄色帯です。おめでとう！`;
+            reward.innerHTML = `<div class="yellow-belt"></div>`;
+            btn.innerText = "道場に戻る";
+            btn.onclick = () => location.reload();
+        }
+    }
+
+    function showDisqualification() {
+        const overlay = document.getElementById("overlay"), msg = document.getElementById("rei-message"), btn = document.getElementById("action-btn");
+        overlay.style.display = "flex";
+        msg.innerHTML = `<span style="color:red; font-size:4rem;">注意３</span><br>不合格！`;
+        btn.innerText = "出直す"; btn.onclick = () => location.reload();
+    }
+
+    showStartRei();
+</script>
+</body>
+</html>
